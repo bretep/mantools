@@ -135,6 +135,6 @@ ENV/
 .ropeproject
 
 .idea/
-weeklyreport.iml
+weeklyreports.iml
 client_secret.json
 config.yaml

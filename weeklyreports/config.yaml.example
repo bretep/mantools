@@ -1,0 +1,23 @@
+# Setup profiles for different reports you might run.
+profiles:
+  run:
+    spreadsheet: <google sheet id>
+    folder: <google folder id>
+    from: First Last <flast@example.com>
+    bcc: group@example.com, person@example.com, another@example.com
+  test:
+    spreadsheet: <google sheet id>
+    folder: <google folder id>
+    from: First Last <flast@example.com>
+    to: user+totest@example.com
+    cc: user+cctest@example.com
+    bcc: user+bcctest@example.com
+
+# Ordered list of report topics in google spread sheet. All topics not listed here will be appended to the bottom of the status report.
+reports:
+  - Highlights
+  - Recruiting
+  - MongoDB
+  - Data Center
+  - SOA
+  - Operations
