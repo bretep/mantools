@@ -1,3 +1,6 @@
 google-api-python-client
+PyYAML
 jinja2
 argparse
+markdown
+pygments

@@ -16,6 +16,7 @@ from jinja2 import Environment, FileSystemLoader
 import datetime
 import yaml
 import argparse
+import markdown
 
 
 def _createargumentparser():
@@ -101,6 +102,10 @@ def is_bullet_item(line=''):
     return line.startswith('- ')
 
 
+def is_white_space(line=''):
+    return line.startswith(' ') or line.startswith('#')
+
+
 def is_number_item(line=''):
     return line.startswith('# ')
 
@@ -111,8 +116,10 @@ TEMPLATE_ENVIRONMENT = Environment(
     loader=FileSystemLoader(os.path.join(PATH, 'templates')),
     trim_blocks=False)
 TEMPLATE_ENVIRONMENT.filters['isBulletItem'] = is_bullet_item
+TEMPLATE_ENVIRONMENT.filters['isWhiteSpace'] = is_white_space
 TEMPLATE_ENVIRONMENT.filters['isNumberItem'] = is_number_item
-template = TEMPLATE_ENVIRONMENT.get_template('report.tpl')
+md_template = TEMPLATE_ENVIRONMENT.get_template('report_md.tpl')
+html_template = TEMPLATE_ENVIRONMENT.get_template('report_html.tpl')
 
 
 def get_credentials():
@@ -249,7 +256,16 @@ def main():
                     }
                     document = ''
                     try:
-                        document = TEMPLATE_ENVIRONMENT.get_template(template).render(context)
+                        document = TEMPLATE_ENVIRONMENT.get_template(md_template).render(context)
+                    except Exception as e:
+                        print('Failed to render doc jinja: {0}', e)
+                        pass
+
+                    html_document = markdown.markdown(document, extensions=['markdown.extensions.codehilite',
+                                                                            'markdown.extensions.tables',
+                                                                            'markdown.extensions.fenced_code'])
+                    try:
+                        document = TEMPLATE_ENVIRONMENT.get_template(html_template).render({'html': html_document})
                     except Exception as e:
                         print('Failed to render doc jinja: {0}', e)
                         pass
@@ -262,9 +278,21 @@ def main():
 
                     email_document = ''
                     try:
-                        email_document = TEMPLATE_ENVIRONMENT.get_template(template).render(context)
+                        email_document = TEMPLATE_ENVIRONMENT.get_template(md_template).render(context)
                     except Exception as e:
                         print('Failed to render email jinja: {0}', e)
+                        pass
+
+                    html_email_document = markdown.markdown(email_document, extensions=[
+                        'markdown.extensions.codehilite',
+                        'markdown.extensions.tables',
+                        'markdown.extensions.fenced_code'])
+                    try:
+                        email_document = TEMPLATE_ENVIRONMENT.get_template(html_template).render(
+                            {'html': html_email_document}
+                        )
+                    except Exception as e:
+                        print('Failed to render doc jinja: {0}', e)
                         pass
 
                     msg = MIMEMultipart()
