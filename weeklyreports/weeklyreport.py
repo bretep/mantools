@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import StringIO
 
 import httplib2
 import os
@@ -17,6 +18,7 @@ import datetime
 import yaml
 import argparse
 import markdown
+import BeautifulSoup
 
 
 def _createargumentparser():
@@ -103,7 +105,11 @@ def is_bullet_item(line=''):
 
 
 def is_white_space(line=''):
-    return line.startswith(' ') or line.startswith('#')
+    return line.startswith(' ') or line.startswith('#') or line.startswith('[')
+
+
+def is_alt_text(line=''):
+    return line.startswith('!') or not line
 
 
 def is_number_item(line=''):
@@ -118,6 +124,7 @@ TEMPLATE_ENVIRONMENT = Environment(
 TEMPLATE_ENVIRONMENT.filters['isBulletItem'] = is_bullet_item
 TEMPLATE_ENVIRONMENT.filters['isWhiteSpace'] = is_white_space
 TEMPLATE_ENVIRONMENT.filters['isNumberItem'] = is_number_item
+TEMPLATE_ENVIRONMENT.filters['isAltText'] = is_alt_text
 md_template = TEMPLATE_ENVIRONMENT.get_template('report_md.tpl')
 html_template = TEMPLATE_ENVIRONMENT.get_template('report_html.tpl')
 
@@ -153,6 +160,86 @@ def get_credentials():
     return credentials
 
 
+def get_files_in_folder(file_service, folder_id):
+    result = []
+    page_token = None
+    while True:
+        try:
+            param = {
+                'q': "'{0}' in parents".format(folder_id),
+                'fields': 'files',
+                'spaces': 'drive',
+            }
+            if page_token:
+                param['pageToken'] = page_token
+            files = file_service.files().list(**param).execute()
+            result.extend(files['files'])
+            page_token = files.get('nextPageToken')
+            if not page_token:
+                break
+        except errors.HttpError, error:
+            print 'An error occurred: %s' % error
+            break
+
+    existing_files = {}
+
+    for name in result:
+        doc_name = name.get('name')
+        doc_info = name
+        if doc_name not in existing_files:
+            if not doc_info.get('trashed'):
+                existing_files[doc_name] = doc_info
+
+    return existing_files
+
+
+def download_file_as_base64(file_service, image_files, file_name):
+    file_id = image_files[file_name].get('id')
+    if not file_id:
+        return None
+    test_req = file_service.files().get_media(fileId=file_id)
+    output = StringIO.StringIO()
+    media_request = http.MediaIoBaseDownload(output, test_req)
+    while True:
+        try:
+            download_progress, done = media_request.next_chunk()
+        except errors.HttpError, error:
+            print 'An error occurred: %s' % error
+            return None
+        if download_progress:
+            print 'Download Progress [{0}]: {1:d}%'.format(file_name, int(download_progress.progress() * 100))
+        if done:
+            print 'Download Complete'
+            break
+
+    contents = output.getvalue()
+    output.close()
+    return base64.b64encode(contents)
+
+
+def filter_img_tags(file_service, image_files, image_store, document):
+    soup = BeautifulSoup.BeautifulSoup(document)
+
+    for img in soup.findAll('img'):
+        image_name = img['src']
+        if image_name not in image_files:
+            continue
+
+        if image_name not in image_store:
+            try:
+                b64img = download_file_as_base64(file_service, image_files, image_name)
+                image_store[image_name] = {
+                    'mimeType': image_files[image_name].get('mimeType'),
+                    'base64': b64img,
+                }
+            except:
+                continue
+
+        img['src'] = 'data:{mimeType};base64,{base64}'.format(**image_store[image_name])
+
+    return soup
+
+
 def main():
     print("Running profile: {0}".format(PROFILE))
     # Setup auth
@@ -174,6 +261,7 @@ def main():
     email_service = discovery.build('gmail', 'v1', http=http_auth)
 
     folder_id = PROFILES[PROFILE]['folder']
+    image_folder_id = PROFILES[PROFILE]['image_folder']
 
     if not values:
         print('No data found.')
@@ -194,32 +282,10 @@ def main():
                 # Add the rollup item to the Project
                 for item in row[5].split('\n'):
                     REPORTS[row[0]][row[1]][row[3]].append(item)
-        result = []
-        page_token = None
-        while True:
-            try:
-                param = {
-                    'q': "'{0}' in parents".format(folder_id),
-                    'fields': 'files',
-                    'spaces': 'drive',
-                }
-                if page_token:
-                    param['pageToken'] = page_token
-                files = file_service.files().list(**param).execute()
-                result.extend(files['files'])
-                page_token = files.get('nextPageToken')
-                if not page_token:
-                    break
-            except errors.HttpError, error:
-                print 'An error occurred: %s' % error
-                break
-        existing_files = {}
-        for name in result:
-            doc_name = name.get('name')
-            doc_info = name
-            if doc_name not in existing_files:
-                if not doc_info.get('trashed'):
-                    existing_files[doc_name] = doc_info
+
+        existing_files = get_files_in_folder(file_service, folder_id)
+        image_files = get_files_in_folder(file_service, image_folder_id)
+        image_store = {}
 
         for year in REPORTS:
             for week in REPORTS[year]:
@@ -245,7 +311,6 @@ def main():
                     'link': None,
                 }
 
-                # file_name = ''.join(week_of.split())
                 file_name = week_of
                 if file_name not in existing_files:
 
@@ -264,14 +329,17 @@ def main():
                     html_document = markdown.markdown(document, extensions=['markdown.extensions.codehilite',
                                                                             'markdown.extensions.tables',
                                                                             'markdown.extensions.fenced_code'])
+
                     try:
                         document = TEMPLATE_ENVIRONMENT.get_template(html_template).render({'html': html_document})
                     except Exception as e:
                         print('Failed to render doc jinja: {0}', e)
                         pass
 
+                    document = filter_img_tags(file_service, image_files, image_store, document)
+
                     document_media = http.MediaInMemoryUpload(document, 'text/html')
-                    file_created = file_service.files().create(body=shortcut_metadata, media_body=document_media)\
+                    file_created = file_service.files().create(body=shortcut_metadata, media_body=document_media) \
                         .execute()
                     print('Created file {0}'.format(file_name))
                     context['link'] = file_created['id']
@@ -294,6 +362,9 @@ def main():
                     except Exception as e:
                         print('Failed to render doc jinja: {0}', e)
                         pass
+
+                    email_document = filter_img_tags(file_service, image_files, image_store, email_document)
+                    email_document = str(email_document)
 
                     msg = MIMEMultipart()
                     msg['Subject'] = 'Infrastructure: Week of {0}'.format(file_name)

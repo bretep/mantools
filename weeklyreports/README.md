@@ -7,5 +7,8 @@ Google sheet format:
 | 2017 | 14 | Joe | Water Shed | Raw status from Joe | |
 | 2017 | 14 | Bob | Apple Tree | Raw status from Bob | Pretty status from Bob |
 | 2017 | 14 | Bob | New Soil | Raw status from Bob | |
-| 2017 | 14 | Bob | Water Shed | Raw status from Bob | Pretty status from Bob |
-| 2017 | 14 | Jake | Landfill | Raw status from Jake | Pretty status from Jake<br/>- Bullted item 1<br/>- Bulleted item 2 |
+| 2017 | 14 | Bob | Water Shed | Raw status from Bob | #### OpsDB<br/>Got the first templating working end-to-end with UDN Saturday, so finally starting on the first web pages now.<br/>\![Embeded images are not supported in your email client. Open the above google document to see this image.][graphimage2]<br/>Got the first templating working end-to-end with UDN Saturday, so finally starting on the first web pages now.<br/>\![Embeded images are not supported in your email client. Open the above google document to see this image.][image1]<br/>[image1]: image1.png "This text will show on mouse hover"<br/>[graphimage2]: gimage2.png "This text will show on mouse hover" |
+| 2017 | 14 | Jake | Landfill | Raw status from Jake | Pretty status from Jake<br/>    - Bullted item 1<br/>    - Bulleted item 2 |
+
+
+Supports in-lining images into google docs. Images are pulled from a google drive folder and filename must match referenced filename.

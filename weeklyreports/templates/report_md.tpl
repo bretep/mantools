@@ -9,7 +9,11 @@
 {% for summary in summaries %}
 {% if summary|isWhiteSpace -%}
 {{ summary -}}
-{% else -%}
+{% elif summary|isAltText %}
+
+
+{{ summary }}
+{%  else %}
 - {{ summary -}}
 {% endif -%}
 {% endfor %}{% endfor %}{% endfor %}

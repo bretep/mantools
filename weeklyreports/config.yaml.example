@@ -3,11 +3,13 @@ profiles:
   run:
     spreadsheet: <google sheet id>
     folder: <google folder id>
+    image_folder: <google folder id>
     from: First Last <flast@example.com>
     bcc: group@example.com, person@example.com, another@example.com
   test:
     spreadsheet: <google sheet id>
     folder: <google folder id>
+    image_folder: <google folder id>
     from: First Last <flast@example.com>
     to: user+totest@example.com
     cc: user+cctest@example.com
