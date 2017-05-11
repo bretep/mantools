@@ -217,7 +217,7 @@ def download_file_as_base64(file_service, image_files, file_name):
     return base64.b64encode(contents)
 
 
-def filter_img_tags(file_service, image_files, image_store, document):
+def filter_img_tags(file_service, image_files, image_store, document, image_alt_text=''):
     soup = BeautifulSoup.BeautifulSoup(document)
 
     for img in soup.findAll('img'):
@@ -236,6 +236,8 @@ def filter_img_tags(file_service, image_files, image_store, document):
                 continue
 
         img['src'] = 'data:{mimeType};base64,{base64}'.format(**image_store[image_name])
+        if not img['alt']:
+            img['alt'] = image_alt_text
 
     return soup
 
@@ -261,7 +263,8 @@ def main():
     email_service = discovery.build('gmail', 'v1', http=http_auth)
 
     folder_id = PROFILES[PROFILE]['folder']
-    image_folder_id = PROFILES[PROFILE]['image_folder']
+    image_folder_id = PROFILES[PROFILE].get('image_folder')
+    image_alt_text = PROFILES[PROFILE].get('image_alt_text')
 
     if not values:
         print('No data found.')
@@ -284,7 +287,10 @@ def main():
                     REPORTS[row[0]][row[1]][row[3]].append(item)
 
         existing_files = get_files_in_folder(file_service, folder_id)
-        image_files = get_files_in_folder(file_service, image_folder_id)
+        if image_folder_id:
+            image_files = get_files_in_folder(file_service, image_folder_id)
+        else:
+            image_files = {}
         image_store = {}
 
         for year in REPORTS:
@@ -336,7 +342,7 @@ def main():
                         print('Failed to render doc jinja: {0}', e)
                         pass
 
-                    document = filter_img_tags(file_service, image_files, image_store, document)
+                    document = filter_img_tags(file_service, image_files, image_store, document, image_alt_text)
 
                     document_media = http.MediaInMemoryUpload(document, 'text/html')
                     file_created = file_service.files().create(body=shortcut_metadata, media_body=document_media) \
@@ -363,7 +369,7 @@ def main():
                         print('Failed to render doc jinja: {0}', e)
                         pass
 
-                    email_document = filter_img_tags(file_service, image_files, image_store, email_document)
+                    email_document = filter_img_tags(file_service, image_files, image_store, email_document, image_alt_text)
                     email_document = str(email_document)
 
                     msg = MIMEMultipart()
