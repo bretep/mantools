@@ -73,5 +73,5 @@ Markdown formatting
 `alt text` is optional if left blank: `![][image_reference]`, `image_alt_text` configured in the configuration file will be used. If `image_alt_text` is not configured, the `alt` tag will be left blank.
 ```markdown
 ![alt text][image_reference]
-[image_reference]: <URL|image_name> "<mouse over text"
+[image_reference]: <URL|image_name> "<mouse over text>"
 ```
