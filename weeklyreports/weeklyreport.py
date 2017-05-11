@@ -21,7 +21,7 @@ import markdown
 import BeautifulSoup
 
 
-def _createargumentparser():
+def _create_argument_parser():
 
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--config_file', default='config.yaml',
@@ -36,17 +36,17 @@ def _createargumentparser():
                         action='store_true', help='Generate all reports.')
     return parser
 
-argparser = _createargumentparser()
+argument_parser = _create_argument_parser()
 
 try:
-    flags = argparse.ArgumentParser(parents=[argparser, tools.argparser]).parse_args()
+    flags = argparse.ArgumentParser(parents=[argument_parser, tools.argparser]).parse_args()
 except:
     flags = None
     raise
 
 try:
-    with open('config.yaml', 'r') as yamlfile:
-        cfg = yaml.load(yamlfile)
+    with open(flags.config_file, 'r') as yaml_file:
+        cfg = yaml.load(yaml_file)
 except:
     raise
 
