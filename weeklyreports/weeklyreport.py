@@ -295,9 +295,9 @@ def main():
 
         for year in REPORTS:
             for week in REPORTS[year]:
-                weekdate = '{0}-W{1}'.format(year, week)
-                start = datetime.datetime.strptime(weekdate + '-0', "%Y-W%W-%w") - datetime.timedelta(days=7)
-                end = datetime.datetime.strptime(weekdate + '-0', "%Y-W%W-%w")
+                week_date = '{0}-W{1}'.format(year, week)
+                start = datetime.datetime.strptime(week_date + '-0', "%Y-W%W-%w") - datetime.timedelta(days=7)
+                end = datetime.datetime.strptime(week_date + '-0', "%Y-W%W-%w")
                 week_of = '{0} - {1}'.format(
                     start.strftime("%Y-%m-%d"),
                     end.strftime("%Y-%m-%d"),
