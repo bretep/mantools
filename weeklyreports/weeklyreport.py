@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import StringIO
+import io
 
 import httplib2
 import os
@@ -343,10 +344,11 @@ def main():
                         pass
 
                     document = filter_img_tags(file_service, image_files, image_store, document, image_alt_text)
+                    document = io.BytesIO(str(document))
 
-                    document_media = http.MediaInMemoryUpload(document, 'text/html')
-                    file_created = file_service.files().create(body=shortcut_metadata, media_body=document_media) \
-                        .execute()
+                    document_media = http.MediaIoBaseUpload(document, mimetype='text/html')
+                    file_created = file_service.files().create(body=shortcut_metadata, media_body=document_media).execute()
+
                     print('Created file {0}'.format(file_name))
                     context['link'] = file_created['id']
 
