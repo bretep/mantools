@@ -226,6 +226,20 @@ def filter_img_tags(file_service, image_files, image_store, document, image_alt_
         if image_name not in image_files:
             continue
 
+        if int(image_files[image_name].get('quotaBytesUsed')) > 69000:
+            if not image_files[image_name].get('image_size_override', False):
+                image_size_override = raw_input('''
+{0} is {1} bytes: The size of this image is larger than 69000 bytes.
+This image will clobber the gmail web/phone client with base64 encoding.
+Would you like to continue [N/y]? '''.format(image_name, image_files[image_name].get('quotaBytesUsed')))
+
+                print(image_size_override.lower())
+                if image_size_override.lower() in ['yes', 'y']:
+                    image_files[image_name]['image_size_override'] = True
+                else:
+                    print('Exiting...')
+                    exit(1)
+
         if image_name not in image_store:
             try:
                 b64img = download_file_as_base64(file_service, image_files, image_name)
@@ -342,7 +356,6 @@ def main():
                     except Exception as e:
                         print('Failed to render doc jinja: {0}', e)
                         pass
-
                     document = filter_img_tags(file_service, image_files, image_store, document, image_alt_text)
                     document = io.BytesIO(str(document))
 
