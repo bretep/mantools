@@ -1,11 +1,14 @@
 #!/usr/bin/env python
 import StringIO
 import io
+import pprint
+import urllib
 
 import httplib2
 import os
 import sys
 import base64
+import email
 
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -15,11 +18,13 @@ from oauth2client import client
 from oauth2client import tools
 from oauth2client.file import Storage
 from jinja2 import Environment, FileSystemLoader
+
 import datetime
 import yaml
 import argparse
 import markdown
 import BeautifulSoup
+import html2text
 
 
 def _create_argument_parser():
@@ -35,6 +40,10 @@ def _create_argument_parser():
                         help='Week number of report.')
     parser.add_argument('--all_reports', default=False,
                         action='store_true', help='Generate all reports.')
+    parser.add_argument('--get_reports', default=False,
+                        action='store_true', help='Get reports will display all undread emails in a gmail label.')
+    parser.add_argument('--skip_email', default=False,
+                        action='store_true', help='Skip sesnding the email.')
     return parser
 
 argument_parser = _create_argument_parser()
@@ -79,6 +88,7 @@ REPORTS_ORDER = cfg.get('reports', [])
 # If modifying these scopes, delete your previously saved credentials
 # at ~/.credentials/weekly-report.json
 SCOPES = [
+    'https://mail.google.com/',
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/drive.file',
     'https://www.googleapis.com/auth/drive.metadata',
@@ -87,7 +97,10 @@ SCOPES = [
     'https://www.googleapis.com/auth/gmail.compose',
     'https://www.googleapis.com/auth/gmail.modify',
     'https://www.googleapis.com/auth/gmail.send',
+    'https://www.googleapis.com/auth/admin.directory.user.readonly',
+    'https://www.googleapis.com/auth/admin.directory.user',
     ]
+
 CLIENT_SECRET_FILE = 'client_secret.json'
 APPLICATION_NAME = 'Weekly Report Script'
 REPORTS = {}
@@ -130,7 +143,7 @@ md_template = TEMPLATE_ENVIRONMENT.get_template('report_md.tpl')
 html_template = TEMPLATE_ENVIRONMENT.get_template('report_html.tpl')
 
 
-def get_credentials():
+def get_credentials(cred_scope, file_name):
     """Gets valid user credentials from storage.
 
     If nothing has been stored, or if the stored credentials are invalid,
@@ -144,12 +157,12 @@ def get_credentials():
     if not os.path.exists(credential_dir):
         os.makedirs(credential_dir)
     credential_path = os.path.join(credential_dir,
-                                   'weekly-report.json')
+                                   file_name)
 
     store = Storage(credential_path)
     credentials = store.get()
     if not credentials or credentials.invalid:
-        flow = client.flow_from_clientsecrets(CLIENT_SECRET_FILE, SCOPES)
+        flow = client.flow_from_clientsecrets(CLIENT_SECRET_FILE, cred_scope)
         flow.user_agent = APPLICATION_NAME
         if flags:
             credentials = tools.run_flow(flow, store, flags)
@@ -260,8 +273,13 @@ Would you like to continue [N/y]? '''.format(image_name, image_files[image_name]
 def main():
     print("Running profile: {0}".format(PROFILE))
     # Setup auth
-    credentials = get_credentials()
+    credentials = get_credentials(SCOPES,'weekly-report.json')
     http_auth = credentials.authorize(httplib2.Http())
+
+    # Setup email read auth
+    # Must do this because you can't search with a metadata scope in email
+    # email_credentials = get_credentials(EMAIL_SCOPES,'weekly-report-email.json')
+    # email_http_auth = email_credentials.authorize(httplib2.Http())
 
     # Google sheets
     sheet_discovery_url = ('https://sheets.googleapis.com/$discovery/rest?' 'version=v4')
@@ -276,6 +294,79 @@ def main():
     # Google docs
     file_service = discovery.build('drive', 'v3', http=http_auth)
     email_service = discovery.build('gmail', 'v1', http=http_auth)
+
+    # User information
+    user_service = discovery.build('admin', 'directory_v1', http=http_auth)
+
+    if flags.get_reports:
+        label_response = email_service.users().labels().list(userId='me').execute()
+        labels = label_response['labels']
+        label_id = None
+        for label in labels:
+            if label.get('name') == '0 - Weekly Status':
+                label_id = label.get('id')
+
+        msg_list_response = email_service.users().messages().list(userId='me',
+                                                                  q='is:unread',
+                                                                  labelIds=label_id).execute()
+
+        messages = []
+        if 'messages' in msg_list_response:
+            messages.extend(msg_list_response['messages'])
+
+            while 'nextPageToken' in msg_list_response:
+                msg_page_token = msg_list_response['nextPageToken']
+                msg_list_response = email_service.users().messages().list(userId='me',
+                                                                          labelIds=label_id,
+                                                                          q='is:unread',
+                                                                          pageToken=msg_page_token).execute()
+                messages.extend(msg_list_response['messages'])
+
+        for mail_msg in messages:
+            mail_payload = None
+            mail_id = mail_msg.get('id')
+            sender_name = None
+            mail_response = email_service.users().messages().get(userId='me',
+                                                                format='raw',
+                                                                id=mail_id).execute()
+            mail_msg_str = base64.urlsafe_b64decode(mail_response['raw'].encode('ASCII'))
+            mail_mime_msg = email.message_from_string(mail_msg_str)
+
+            sender_email = mail_mime_msg['X-Original-Sender']
+
+            user_response = user_service.users().get(userKey=sender_email).execute()
+
+            if user_response.get('name'):
+                sender_name = user_response.get('name').get('fullName', sender_email)
+
+            if mail_mime_msg.is_multipart():
+                for msg_part in mail_mime_msg.walk():
+                    if msg_part.get_content_maintype() == 'text':
+                        mail_payload = msg_part.get_payload(decode=True)
+            else:
+                mail_payload = msg_part.get_payload(decode=True)
+
+            try:
+                print(u'''
+---------------------------------------------------------------
+Name: {0}
+
+Report:
+{1}
+---------------------------------------------------------------''').format(sender_name,
+                                                                           html2text.html2text(urllib.unquote(
+                                                                               mail_payload.decode("utf8")
+                                                                           )))
+                msg_labels={'addLabelIds': ['Label_9'],
+                            'removeLabelIds': ['UNREAD'],
+                            }
+                email_service.users().messages().modify(userId='me',
+                                                        id=mail_id,
+                                                        body=msg_labels).execute()
+            except UnicodeEncodeError:
+                print('{0}\'s report could not be displayed: UnicodeEncodeError'.format(sender_name))
+
+        sys.exit(0)
 
     folder_id = PROFILES[PROFILE]['folder']
     image_folder_id = PROFILES[PROFILE].get('image_folder')
@@ -365,41 +456,43 @@ def main():
                     print('Created file {0}'.format(file_name))
                     context['link'] = file_created['id']
 
-                    email_document = ''
-                    try:
-                        email_document = TEMPLATE_ENVIRONMENT.get_template(md_template).render(context)
-                    except Exception as e:
-                        print('Failed to render email jinja: {0}', e)
-                        pass
+                    if not flags.skip_email:
+                        email_document = ''
 
-                    html_email_document = markdown.markdown(email_document, extensions=[
-                        'markdown.extensions.codehilite',
-                        'markdown.extensions.tables',
-                        'markdown.extensions.fenced_code'])
-                    try:
-                        email_document = TEMPLATE_ENVIRONMENT.get_template(html_template).render(
-                            {'html': html_email_document}
-                        )
-                    except Exception as e:
-                        print('Failed to render doc jinja: {0}', e)
-                        pass
+                        try:
+                            email_document = TEMPLATE_ENVIRONMENT.get_template(md_template).render(context)
+                        except Exception as e:
+                            print('Failed to render email jinja: {0}', e)
+                            pass
 
-                    email_document = filter_img_tags(file_service, image_files, image_store, email_document, image_alt_text)
-                    email_document = str(email_document)
+                        html_email_document = markdown.markdown(email_document, extensions=[
+                            'markdown.extensions.codehilite',
+                            'markdown.extensions.tables',
+                            'markdown.extensions.fenced_code'])
+                        try:
+                            email_document = TEMPLATE_ENVIRONMENT.get_template(html_template).render(
+                                {'html': html_email_document}
+                            )
+                        except Exception as e:
+                            print('Failed to render doc jinja: {0}', e)
+                            pass
 
-                    msg = MIMEMultipart()
-                    msg['Subject'] = 'Infrastructure: Week of {0}'.format(file_name)
-                    msg['From'] = PROFILES[PROFILE]['from']
-                    msg['To'] = PROFILES[PROFILE].get('to', '')
-                    msg['Cc'] = PROFILES[PROFILE].get('cc', '')
-                    msg['Bcc'] = PROFILES[PROFILE].get('bcc', '')
+                        email_document = filter_img_tags(file_service, image_files, image_store, email_document, image_alt_text)
+                        email_document = str(email_document)
 
-                    part1 = MIMEText(email_document, 'html', 'UTF-8')
-                    msg.attach(part1)
+                        msg = MIMEMultipart()
+                        msg['Subject'] = 'Infrastructure: Week of {0}'.format(file_name)
+                        msg['From'] = PROFILES[PROFILE]['from']
+                        msg['To'] = PROFILES[PROFILE].get('to', '')
+                        msg['Cc'] = PROFILES[PROFILE].get('cc', '')
+                        msg['Bcc'] = PROFILES[PROFILE].get('bcc', '')
 
-                    final_msg = {'raw': base64.urlsafe_b64encode(msg.as_string())}
-                    message = (email_service.users().messages().send(userId='me', body=final_msg).execute())
-                    print('Sent email message id: {0}'.format(message['id']))
+                        part1 = MIMEText(email_document, 'html', 'UTF-8')
+                        msg.attach(part1)
+
+                        final_msg = {'raw': base64.urlsafe_b64encode(msg.as_string())}
+                        message = (email_service.users().messages().send(userId='me', body=final_msg).execute())
+                        print('Sent email message id: {0}'.format(message['id']))
 
                 else:
                     print('File {0} exists. Skipping...'.format(file_name))
