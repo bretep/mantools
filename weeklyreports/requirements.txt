@@ -5,3 +5,5 @@ argparse
 markdown
 pygments
 BeautifulSoup
+tornado
+html2text
