@@ -324,6 +324,8 @@ def main():
 
         for mail_msg in messages:
             mail_payload = None
+            mail_date = None
+            mail_week = None
             mail_id = mail_msg.get('id')
             sender_name = None
             mail_response = email_service.users().messages().get(userId='me',
@@ -331,6 +333,10 @@ def main():
                                                                 id=mail_id).execute()
             mail_msg_str = base64.urlsafe_b64decode(mail_response['raw'].encode('ASCII'))
             mail_mime_msg = email.message_from_string(mail_msg_str)
+            mail_date = mail_response.get('internalDate')
+            if mail_date:
+                mail_date = float(mail_date) / 1000
+                mail_week = datetime.datetime.fromtimestamp(mail_date).strftime('%V')
 
             sender_email = mail_mime_msg['X-Original-Sender']
 
@@ -350,10 +356,12 @@ def main():
                 print(u'''
 ---------------------------------------------------------------
 Name: {0}
+Week: {1}
 
 Report:
-{1}
+{2}
 ---------------------------------------------------------------''').format(sender_name,
+                                                                           mail_week,
                                                                            html2text.html2text(urllib.unquote(
                                                                                mail_payload.decode("utf8")
                                                                            )))
